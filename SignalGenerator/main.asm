@@ -8,14 +8,14 @@
 .include "tn817def.inc"
 rjmp start
 
-
+; 256 byte re-configurable wave-table
 .dseg
 	.align 0x100
 	wave_table: .byte 256
 
+; Interrupt Vector Table
 .cseg
 .org 0x04 rjmp isr_pb5
-.org 0x08 rjmp isr_tca0_ovf
 
 ; PB5 pin interrupt
 isr_pb5:
@@ -39,7 +39,7 @@ isr_pb5:
 
 	cpi r20, 1
 	brne pb_int_tmp2
-		rcall load_square
+		rcall load_pulse
 		ldi r20, 2
 		rjmp pb_int_exit
 	pb_int_tmp2:
@@ -55,27 +55,6 @@ isr_pb5:
 		pop r16
 		reti
 
-; TCA0 OVF interrupt
-isr_tca0_ovf:
-	push r16
-	inc r19
-	cpi r20, 0
-	brne isr_tca0_ovf_next1
-		rcall load_sine
-		rjmp isr_tca0_ovf_done
-	isr_tca0_ovf_next1:
-	cpi r20, 1
-	brne isr_tca0_ovf_next2
-		rcall load_triangle
-		rjmp isr_tca0_ovf_done
-	isr_tca0_ovf_next2:
-	rcall load_square
-	isr_tca0_ovf_done:
-	ldi r16, TCA_SINGLE_OVF_bm
-	sts TCA0_SINGLE_INTFLAGS, r16
-	pop r16
-	reti
-
 
 start:
 	; Set clock source to 20 MHz, with div 2 prescaler
@@ -88,12 +67,6 @@ start:
 	ldi r16, PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc
 	sts PORTB_PIN5CTRL, r16
 
-	; Setup TCA0 for periodic interrupt
-	ldi r16, TCA_SINGLE_OVF_bm
-	sts TCA0_SINGLE_INTCTRL, r16
-	ldi r16, TCA_SINGLE_CLKSEL_DIV2_gc | TCA_SINGLE_ENABLE_bm
-	sts TCA0_SINGLE_CTRLA, r16
-
 	; Set DACs VREF to 2V5
 	ldi r16, VREF_DAC0REFSEL_2V5_gc
 	sts VREF_CTRLA, r16
@@ -103,17 +76,17 @@ start:
 	sts DAC0_CTRLA, r16
 
 	; r20 used as wave index
-	; 0 - Sine, 1 - Triangle, 2 - Square
+	; 0 - Sine, 1 - Triangle, 2 - Pulse
 	ldi r20, 1
 
-	; r19 used as wave shape
-	;   Sine: N/A
-	;   Triangle: Symmetry
-	;   Square: Duty
-	ldi r19, 211
-
-	; Load wave table
+	; Load initial wave table
 	rcall load_triangle
+
+	; r19 used as wave shape parameter
+	;   Sine:     N/A
+	;   Triangle: Symmetry
+	;   Pulse:    Duty
+	ldi r19, 211
 
 	; Set X = DAC0.DATA
 	ldi XH, HIGH(DAC0_DATA)
@@ -147,6 +120,7 @@ start:
 		adc ZL, r25
 
 		rjmp loop
+
 
 .cseg
 	.align 0x100
@@ -227,8 +201,8 @@ start:
 		pop XH
 		ret
 
-	; Load the wave table with a square function
-	load_square:
+	; Load the wave table with a pulse function
+	load_pulse:
 		push XH
 		push XL
 		push r16
@@ -237,20 +211,19 @@ start:
 		clr XL
 		clr r16
 		ser r17
-		ser r19
 		cp r19, r16
-		breq load_square_loop_2 ; Skip loop 1 if duty-cycle is 0%
-		load_square_loop_1:
+		breq load_pulse_loop_2 ; Skip loop 1 if duty-cycle is 0%
+		load_pulse_loop_1:
 			st X+, r17
 			cp XL, r19
-			brne load_square_loop_1
+			brne load_pulse_loop_1
 		cp r19, r17
-		breq load_square_exit ; Skip loop 2 if duty-cycle is 100%
-		load_square_loop_2:
+		breq load_pulse_exit ; Skip loop 2 if duty-cycle is 100%
+		load_pulse_loop_2:
 			st X+, r16
 			cpi XL, 0
-			brne load_square_loop_2
-		load_square_exit:
+			brne load_pulse_loop_2
+		load_pulse_exit:
 		pop r17
 		pop r16
 		pop XL
