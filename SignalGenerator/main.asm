@@ -22,32 +22,47 @@ isr_pb5:
 	push r16
 	push r17
 	push r18
+	push r15
 
-	; Debounce falling edge
-	;	Checks that signal is stable for
-	;   ~10ms (on a 10 MHz clock)
+	; Debounce PORTB edge
+	;	Checks that all pins on PORTB are stable
+	;   for ~10ms (on a 10 MHz clock)
+	;   To ensure no floating pins, unused pins
+	;   should be grounded
+	in r15, VPORTB_IN
 	clr r16
-	ldi r17, 0x50
+	ldi r17, 0xD0
 	pb_int_debounce_1:
 		in r18, VPORTB_IN
-		bst r18, 5
-		brts pb_int_exit
+		cp r18, r15
+		brne pb_int_exit
 		ldi r18, 1
 		add r16, r18
 		clr r18
 		adc r17, r18
 		brcc pb_int_debounce_1
 
+	; Switch between pins
+	in r16, VPORTB_IN
+	;bst r16, 0
+	;	brtc PB0_action
+	;bst r16, 1
+	;	brtc PB1_action
+	;bst r16, 2
+	;	brtc PB2_action
+	;bst r16, 3
+	;	brtc PB3_action
+	;bst r16, 4
+	;	brtc PB4_action
+	bst r16, 5
+		brtc PB5_action
+	;bst r16, 6
+	;	brtc PB6_action
+	;bst r16, 7
+	;	brtc PB7_action
+	rjmp pb_int_exit
 
-	; Handle interrupt
-	ldi r16, 0xFF
-	pb_int_loop:
-		in r17, VPORTB_IN
-		bst r17, 5
-		brts pb_int_exit
-		dec r16
-		brne pb_int_loop
-
+	PB5_action:
 	; Load new wave, and cycle wave index
 	cpi r20, 0
 	brne pb_int_tmp1
@@ -70,6 +85,7 @@ isr_pb5:
 		; Clear interrupt signal
 		ser r16
 		out VPORTB_INTFLAGS, r16
+		pop r15
 		pop r18
 		pop r17
 		pop r16
@@ -82,6 +98,11 @@ start:
 	out CPU_CCP, r16
 	ldi r16, CLKCTRL_PEN_bm
 	sts CLKCTRL_MCLKCTRLB, r16
+
+	; Ground all unused pins on PORTB
+	ldi r16, 0b11011111
+	sts PORTB_DIRSET, r16
+	sts PORTB_OUTCLR, r16
 
 	; Enable pin-interrupt on falling edge of PB5
 	ldi r16, PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc
@@ -141,6 +162,19 @@ start:
 
 		rjmp loop				; 2
 
+	lfsr_init:
+		ldi r31, 0xD8
+		ldi r30, 0x01
+	loop_lfsr:
+		ror r30
+		ror r22
+		ror r21
+		brcc lfsr_tmp1
+			eor r30, r31
+		lfsr_tmp1:
+		swap r30
+		st X, r30
+		rjmp loop_lfsr
 
 .cseg
 	.align 0x100
