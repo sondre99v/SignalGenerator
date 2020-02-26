@@ -21,6 +21,25 @@ rjmp start
 isr_pb5:
 	push r16
 	push r17
+	push r18
+
+	; Debounce falling edge
+	;	Checks that signal is stable for
+	;   ~10ms (on a 10 MHz clock)
+	clr r16
+	ldi r17, 0x50
+	pb_int_debounce_1:
+		in r18, VPORTB_IN
+		bst r18, 5
+		brts pb_int_exit
+		ldi r18, 1
+		add r16, r18
+		clr r18
+		adc r17, r18
+		brcc pb_int_debounce_1
+
+
+	; Handle interrupt
 	ldi r16, 0xFF
 	pb_int_loop:
 		in r17, VPORTB_IN
@@ -51,6 +70,7 @@ isr_pb5:
 		; Clear interrupt signal
 		ser r16
 		out VPORTB_INTFLAGS, r16
+		pop r18
 		pop r17
 		pop r16
 		reti
@@ -67,7 +87,7 @@ start:
 	ldi r16, PORT_PULLUPEN_bm | PORT_ISC_FALLING_gc
 	sts PORTB_PIN5CTRL, r16
 
-	; Set DACs VREF to 2V5
+	; Set DACs VREF
 	ldi r16, VREF_DAC0REFSEL_2V5_gc
 	sts VREF_CTRLA, r16
 
@@ -75,18 +95,18 @@ start:
 	ldi r16, DAC_OUTEN_bm | DAC_ENABLE_bm
 	sts DAC0_CTRLA, r16
 
+	; r19 used as wave shape parameter
+	;   Sine:     N/A
+	;   Triangle: Symmetry
+	;   Pulse:    Duty
+	ldi r19, 128
+
 	; r20 used as wave index
 	; 0 - Sine, 1 - Triangle, 2 - Pulse
 	ldi r20, 1
 
 	; Load initial wave table
 	rcall load_triangle
-
-	; r19 used as wave shape parameter
-	;   Sine:     N/A
-	;   Triangle: Symmetry
-	;   Pulse:    Duty
-	ldi r19, 211
 
 	; Set X = DAC0.DATA
 	ldi XH, HIGH(DAC0_DATA)
@@ -101,8 +121,8 @@ start:
 	clr r21
 
 	; Phase step = r25:r24:r23
-	ldi r25, 0
-	ldi r24, 0x20
+	ldi r25, 0x01
+	ldi r24, 0x00
 	ldi r23, 0
 
 	; Enable global interrupts
@@ -111,15 +131,15 @@ start:
 	; Start main synthesis-loop
 	loop:
 		; Output sample
-		ld r16, Z
-		st X, r16
+		ld r16, Z				; 2
+		st X, r16				; 1
 
 		; Accumulate phase
-		add r21, r23
-		adc r22, r24
-		adc ZL, r25
+		add r21, r23			; 1
+		adc r22, r24			; 1
+		adc ZL, r25				; 1
 
-		rjmp loop
+		rjmp loop				; 2
 
 
 .cseg
